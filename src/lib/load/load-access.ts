@@ -40,19 +40,19 @@ export default async function loadAccess(dir: string) {
           continue
         }
 
-        const compositeKey = getCompositeKey(acc)
-        if (existingAccessByCompositeKey.has(compositeKey)) {
-          continue
+        // Remap admin role BEFORE composite key check to prevent duplicates
+        if (acc.role === legacyAdminRoleId) {
+          acc.role = newAdminRoleId
         }
 
         // If the role is null, delete the role key to avoid errors
         if (acc.role === null) {
-          delete acc.role
+          delete (acc as {role?: string | null}).role
         }
 
-        // If the role is the legacy admin role, update it to the new admin role
-        if (acc.role === legacyAdminRoleId) {
-          acc.role = newAdminRoleId
+        const compositeKey = getCompositeKey(acc)
+        if (existingAccessByCompositeKey.has(compositeKey)) {
+          continue
         }
 
         await api.client.request(() => ({
