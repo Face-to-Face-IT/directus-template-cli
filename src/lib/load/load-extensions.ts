@@ -43,31 +43,36 @@ export default async function loadExtensions(dir: string): Promise<void> {
 
       if (extensionsToInstall.length > 0) {
         ux.action.start(ux.colorize(DIRECTUS_PINK, `Installing ${extensionsToInstall.length} extensions`))
-        const results = await Promise.allSettled(extensionsToInstall.map(async ext => {
+
+        // Install extensions sequentially to avoid overwhelming the server
+        let installed = 0
+        let failed = 0
+        for (const ext of extensionsToInstall) {
           try {
+            // Use UUID from template as the extension ID (required by directus_extensions table)
+            const extensionId = ext.id
+            // Construct version_id: @scope__package@version (replace / with __ in package name)
+            const versionId = ext.schema?.name && ext.schema?.version
+              ? `${ext.schema.name.replace(/\//g, '__')}@${ext.schema.version}`
+              : ext.meta?.folder
             await installExtension({
-              id: ext.id,
-              // The extension version UUID is the folder name
-              version: ext.meta?.folder,
+              id: extensionId,
+              version: versionId,
             })
-            return `-- Installed ${ext.schema?.name}`
+            ux.stdout(`-- Installed ${ext.schema?.name}`)
+            installed++
           } catch (error) {
             catchError(error, {
-      context: {operation: 'load_extensions'},
-      fatal: true,
-    })
-            return `-- Failed to install ${ext.schema?.name}`
-          }
-        }))
-
-        for (const result of results) {
-          if (result.status === 'fulfilled') {
-            ux.stdout(result.value)
+              context: {operation: 'load_extensions'},
+              fatal: false,
+            })
+            ux.stdout(`-- Failed to install ${ext.schema?.name}`)
+            failed++
           }
         }
 
         ux.action.stop()
-        ux.stdout('Finished installing extensions')
+        ux.stdout(`Finished installing extensions: ${installed} succeeded, ${failed} failed`)
       } else {
       // All extensions are already installed
         ux.stdout('All extensions are already installed')
