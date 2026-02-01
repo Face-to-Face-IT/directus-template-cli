@@ -43,3 +43,22 @@ export interface Extension {
 }
 
 export type Extensions = Extension[];
+
+/**
+ * Represents an extension as returned by the Directus readExtensions() API.
+ * This differs from the SDK's DirectusExtension type which doesn't include all fields.
+ */
+export interface InstalledExtension {
+  id: string;
+  bundle: string | null;
+  meta: {
+    enabled: boolean;
+    folder: string;
+    source: 'local' | 'registry';
+  } | null;
+  schema: {
+    name: string;
+    version: string;
+    type: ExtensionType;
+  } | null;
+}

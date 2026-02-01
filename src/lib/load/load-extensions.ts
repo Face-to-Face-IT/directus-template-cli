@@ -1,7 +1,7 @@
 import {customEndpoint, readExtensions} from '@directus/sdk'
 import {ux} from '@oclif/core'
 
-import type {Extension} from '../types/extension.js'
+import type {Extension, InstalledExtension} from '../types/extension.js'
 
 import {DIRECTUS_PINK} from '../constants.js'
 import {api} from '../sdk.js'
@@ -26,18 +26,29 @@ export default async function loadExtensions(dir: string): Promise<void> {
     const extensions: Extension[] = readFile('extensions', dir)
 
     if (extensions && extensions.length > 0) {
-      const installedExtensions = await api.client.request(readExtensions())
+      // Cast to InstalledExtension[] since SDK's DirectusExtension type is incomplete
+      const installedExtensions = await api.client.request(readExtensions()) as unknown as InstalledExtension[]
 
       const registryExtensions = extensions.filter(ext => ext.meta?.source === 'registry' && !ext.bundle)
       const bundles = [...new Set(extensions.filter(ext => ext.bundle).map(ext => ext.bundle))]
       const localExtensions = extensions.filter(ext => ext.meta?.source === 'local')
 
-      const extensionsToInstall = extensions.filter(ext =>
-        ext.meta?.source === 'registry'
-        && !ext.bundle
-        // @ts-ignore - ignore
-        && !installedExtensions.some(installed => installed.id === ext.id),
-      )
+      const extensionsToInstall = extensions.filter(ext => {
+        if (ext.meta?.source !== 'registry' || ext.bundle) {
+          return false
+        }
+        // Check if extension is already installed by ID or by schema name
+        const alreadyInstalled = installedExtensions.some((installed) => {
+          // Match by ID
+          if (installed.id === ext.id) return true
+          // Match by schema name (for pre-baked extensions in Docker image)
+          if (installed.schema?.name && installed.schema.name === ext.schema?.name) return true
+          // Match by folder name containing the package name
+          if (ext.schema?.name && installed.meta?.folder?.includes(ext.schema.name.replace('/', '__'))) return true
+          return false
+        })
+        return !alreadyInstalled
+      })
 
       ux.stdout(`Found ${extensions.length} extensions total: ${registryExtensions.length} registry extensions (including ${bundles.length} bundles), and ${localExtensions.length} local extensions`)
 

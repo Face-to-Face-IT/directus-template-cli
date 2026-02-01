@@ -15,7 +15,14 @@ export default async function updateRequiredFields(dir: string) {
 
   for await (const field of fieldsToUpdate) {
     try {
-      await api.client.request(updateField(field.collection, field.field, {meta: {...field.meta}, schema: {...field.schema}}))
+      // Only include schema if it exists (alias fields have null schema)
+      const payload: { meta: typeof field.meta; schema?: typeof field.schema } = {
+        meta: {...field.meta},
+      }
+      if (field.schema) {
+        payload.schema = {...field.schema}
+      }
+      await api.client.request(updateField(field.collection, field.field, payload))
     } catch (error) {
       catchError(error)
     }
