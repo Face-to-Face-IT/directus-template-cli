@@ -1,6 +1,6 @@
 import {ux} from '@oclif/core'
 
-import type { ApplyFlags } from './apply-flags.js'
+import type {ApplyFlags} from './apply-flags.js'
 
 import checkTemplate from '../utils/check-template.js'
 import loadAccess from './load-access.js'
@@ -15,18 +15,20 @@ import loadPermissions from './load-permissions.js'
 import loadPolicies from './load-policies.js'
 import loadPresets from './load-presets.js'
 import loadRelations from './load-relations.js'
+import relaxRequiredFields from './relax-required-fields.js'
 import loadRoles from './load-roles.js'
 import loadSettings from './load-settings.js'
 import loadTranslations from './load-translations.js'
 import loadUsers from './load-users.js'
 import updateRequiredFields from './update-required-fields.js'
 
-
 export default async function apply(dir: string, flags: ApplyFlags) {
   const source = `${dir}/src`
   const isTemplateOk = await checkTemplate(source)
   if (!isTemplateOk) {
-    ux.error('The template is missing the collections, fields, or relations files. Older templates are not supported in v0.4 of directus-template-cli. Try using v0.3 to load older templates npx directus-template-cli@0.3 apply or extract the template using latest version before applying. Exiting...')
+    ux.error(
+      'The template is missing the collections, fields, or relations files. Older templates are not supported in v0.4 of directus-template-cli. Try using v0.3 to load older templates npx directus-template-cli@0.3 apply or extract the template using latest version before applying. Exiting...',
+    )
   }
 
   if (flags.schema) {
@@ -52,7 +54,15 @@ export default async function apply(dir: string, flags: ApplyFlags) {
   }
 
   if (flags.content) {
+    if (!flags.schema) {
+      await relaxRequiredFields(source)
+    }
+
     await loadData(source)
+
+    if (!flags.schema) {
+      await updateRequiredFields(source)
+    }
   }
 
   if (flags.schema) {
