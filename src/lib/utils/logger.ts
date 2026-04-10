@@ -38,7 +38,16 @@ class Logger {
   private resolveLogDir(): string {
     // 1. Explicit env var override
     const envDir = process.env.DIRECTUS_TEMPLATE_CLI_LOG_DIR
-    if (envDir) return envDir
+    if (envDir) {
+      try {
+        const stat = fs.statSync(envDir)
+        if (!stat.isDirectory()) return path.join(process.cwd(), '.directus-template-cli', 'logs')
+      } catch {
+        // Path doesn't exist yet — will be created in initializeLogFile
+      }
+
+      return envDir
+    }
 
     // 2. Default: cwd-relative directory
     return path.join(process.cwd(), '.directus-template-cli', 'logs')
@@ -47,8 +56,7 @@ class Logger {
   private initializeLogFile(): void {
     this.initialized = true
 
-    // @ts-ignore - ignore
-    const timestamp = new Date().toISOString().replaceAll(/[.:]/g, '-')
+    const timestamp = new Date().toISOString().replace(/[.:]/g, '-')
 
     let logDir = this.resolveLogDir()
 
@@ -56,6 +64,8 @@ class Logger {
       if (!fs.existsSync(logDir)) {
         fs.mkdirSync(logDir, {recursive: true})
       }
+
+      fs.accessSync(logDir, fs.constants.W_OK)
     } catch {
       // cwd-relative dir not writable — fall back to os.tmpdir()
       const fallbackDir = path.join(os.tmpdir(), 'directus-template-cli', 'logs')
@@ -64,6 +74,7 @@ class Logger {
           fs.mkdirSync(fallbackDir, {recursive: true})
         }
 
+        fs.accessSync(fallbackDir, fs.constants.W_OK)
         logDir = fallbackDir
       } catch {
         // Neither location is writable — disable file logging silently
