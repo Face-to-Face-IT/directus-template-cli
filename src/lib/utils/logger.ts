@@ -1,13 +1,15 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'pathe'
 
 class Logger {
   private static instance: Logger
-  private logFilePath: string
+  private logFilePath: string | undefined
+  private initialized = false
+  private disabled = false
 
-  private constructor() {
-    this.initializeLogFile()
-  }
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  private constructor() {}
 
   public static getInstance(): Logger {
     if (!Logger.instance) {
@@ -18,6 +20,14 @@ class Logger {
   }
 
   public log(level: 'error' | 'info' | 'warn', message: string, context?: Record<string, any>): void {
+    if (this.disabled) return
+
+    if (!this.initialized) {
+      this.initializeLogFile()
+    }
+
+    if (this.disabled) return
+
     const timestamp = new Date().toISOString()
     const contextString = context ? JSON.stringify(this.sanitize(context)) : ''
     const logEntry = `${timestamp} - ${level.toUpperCase()}: ${message}${contextString ? ` Context: ${contextString}` : ''}\n`
@@ -25,12 +35,52 @@ class Logger {
     this.writeToFile(logEntry)
   }
 
+  private resolveLogDir(): string {
+    // 1. Explicit env var override
+    const envDir = process.env.DIRECTUS_TEMPLATE_CLI_LOG_DIR
+    if (envDir) {
+      try {
+        const stat = fs.statSync(envDir)
+        if (!stat.isDirectory()) return path.join(process.cwd(), '.directus-template-cli', 'logs')
+      } catch {
+        // Path doesn't exist yet — will be created in initializeLogFile
+      }
+
+      return envDir
+    }
+
+    // 2. Default: cwd-relative directory
+    return path.join(process.cwd(), '.directus-template-cli', 'logs')
+  }
+
   private initializeLogFile(): void {
-    // @ts-ignore - ignore
-    const timestamp = new Date().toISOString().replaceAll(/[.:]/g, '-')
-    const logDir = path.join(process.cwd(), '.directus-template-cli', 'logs')
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, {recursive: true})
+    this.initialized = true
+
+    const timestamp = new Date().toISOString().replace(/[.:]/g, '-')
+
+    let logDir = this.resolveLogDir()
+
+    try {
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, {recursive: true})
+      }
+
+      fs.accessSync(logDir, fs.constants.W_OK)
+    } catch {
+      // cwd-relative dir not writable — fall back to os.tmpdir()
+      const fallbackDir = path.join(os.tmpdir(), 'directus-template-cli', 'logs')
+      try {
+        if (!fs.existsSync(fallbackDir)) {
+          fs.mkdirSync(fallbackDir, {recursive: true})
+        }
+
+        fs.accessSync(fallbackDir, fs.constants.W_OK)
+        logDir = fallbackDir
+      } catch {
+        // Neither location is writable — disable file logging silently
+        this.disabled = true
+        return
+      }
     }
 
     this.logFilePath = path.join(logDir, `run-${timestamp}.log`)
@@ -40,7 +90,16 @@ class Logger {
   }
 
   private sanitize(obj: Record<string, any>): Record<string, any> {
-    const sensitiveFields = new Set(['access_token', 'authorization', 'email', 'key', 'password', 'refresh_token', 'secret', 'token'])
+    const sensitiveFields = new Set([
+      'access_token',
+      'authorization',
+      'email',
+      'key',
+      'password',
+      'refresh_token',
+      'secret',
+      'token',
+    ])
     return Object.fromEntries(
       Object.entries(obj).map(([key, value]) => {
         if (sensitiveFields.has(key.toLowerCase())) {
@@ -57,10 +116,12 @@ class Logger {
   }
 
   private writeToFile(message: string): void {
+    if (!this.logFilePath) return
     try {
       fs.appendFileSync(this.logFilePath, message)
-    } catch (error) {
-      console.error('Error writing to log file:', error)
+    } catch {
+      // File became unwritable after init — disable to avoid repeated errors
+      this.disabled = true
     }
   }
 }
